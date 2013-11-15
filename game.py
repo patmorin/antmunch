@@ -20,9 +20,14 @@ def load_font(filename, size):
     """Load a font from the fonts directory"""
     return pygame.font.Font(os.path.join('fonts', filename), size)
 
-def load_image(filename):
+def load_image(filename, alpha):
     """Load an image with the given filename from the images directory"""
-    return pygame.image.load(os.path.join('images', filename))
+    img = pygame.image.load(os.path.join('images', filename))
+    if alpha:
+        img = img.convert_alpha()
+    else:
+        img = img.convert()
+    return img
 
 
 def load_sound(filename):
@@ -36,6 +41,16 @@ def draw_centered(surface1, surface2, position):
     rect = rect.move(position[0]-rect.width//2, position[1]-rect.height//2)
     surface2.blit(surface1, rect)
 
+
+def crop_image(img, width, height):
+    """Crop an image around its center"""
+    assert(img.get_width() >= width and img.get_height() >= height)
+    img2 = pygame.Surface((width, height))
+    rect = img.get_rect()
+    rect = rect.move(-(rect.width-width)//2, -(rect.height-height)//2)
+    img2.blit(img, rect)
+    return img2
+    
 
 # Classes used within the game
 class GameObject(object):
@@ -58,10 +73,11 @@ class Ant(GameObject):
 
     """An ant is the main character in our game"""
     def __init__(self, position):
-        super(Ant, self).__init__(position, load_image('ant-game.png'))
+        super(Ant, self).__init__(position, load_image('ant-game.png', True))
         self.speed = Ant.START_SPEED
         self.direction = 0
-        self.images = [load_image('ant-game-%d.png' % i) for i in range(3) ]
+        self.images = [load_image('ant-game-%d.png' % i, True) 
+                        for i in range(3) ]
         self.image_index = 1
 
     def choose_food(self, food):
@@ -120,9 +136,9 @@ class Food(GameObject):
 
     @classmethod
     def initialize(cls):
-        cls.images = [load_image('cashew-game.png'),
-                      load_image('kiwi-game.gif'),
-                      load_image('orange-game.png')]
+        cls.images = [load_image('cashew-game.png', True),
+                      load_image('kiwi-game.gif', True),
+                      load_image('orange-game.png', True)]
 
     def __init__(self, position):
         super(Food, self).__init__(position, random.choice(Food.images))
@@ -130,10 +146,11 @@ class Food(GameObject):
 class Poison(GameObject):
     """This is poison --- ants shouldn't eat this"""
     def __init__(self, position):
-        super(Poison, self).__init__(position, load_image('poison-game.png'))
+        super(Poison, self).__init__(position, 
+                                     load_image('poison-game.png', True))
         
-# The Game class
 class Game(object):
+    """This class controls the game"""
 
     # different game states
     PLAYING, DYING, GAME_OVER, STARTING = range(4)
@@ -151,35 +168,40 @@ class Game(object):
         pygame.mixer.pre_init(44100, -16, 2, 2048)
         pygame.init()
 
-        # set up a 640 x 480 window
+        # set up a window
         self.width = 800
         self.height = 600
         self.screen = pygame.display.set_mode((self.width, self.height))
 
         # set background color
         self.bg_color = 0xef, 0xde, 0xcd  # almond
-        self.txt_color = 0x9b, 0x6f, 0x43 # nice match for almond
+        self.txt_color = 0x6f, 0x4e, 0x37 # nice match for almond
 
         # initialize the Food class
         Food.initialize()
 
         # Game state variables
+        self.lives = 3
+        self.score = 0
+        self.state = Game.STARTING
+
+        # background image
+        self.background_img = crop_image(load_image('pavement.jpg', False), 
+                                        self.width, self.height)
 
         # In-game objects
         self.ant = Ant((self.width//2, self.height//2))
         self.food = []
         self.poison = []
-        self.lives = 3
-        self.score = 0
 
-        self.state = Game.STARTING
-
+        # Text objects
         font = load_font('barricade.ttf', 50)
         self.gameover_txt = font.render('Game Over', True, (255, 0, 0))
         self.playgame_txt = font.render('Click to Play', True, 
                                         self.txt_color)
         self.font = font
 
+        # Sound effects
         self.die_snd = load_sound('die.wav')
         self.gameover_snd = load_sound('gameover.wav')
         self.eat_snd = load_sound('eat.wav')
@@ -188,8 +210,9 @@ class Game(object):
 
         # Setup a timer to refresh the display FPS times per second
         self.FPS = 30
-
         pygame.time.set_timer(Game.REFRESH, 1000//self.FPS)
+
+        
 
     def restart(self):
         """Restart a brand new game"""
@@ -209,7 +232,6 @@ class Game(object):
 
         self.ant.choose_food(self.food)
         self.state = Game.PLAYING
-
 
     def good_position(self):
         """Pick a good location, not too close to the ant or anything else"""
@@ -249,6 +271,8 @@ class Game(object):
 
             # player is asking to quit
             elif event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 running = False
 
             # user is clicking while playing
@@ -330,7 +354,9 @@ class Game(object):
     def draw(self):
         """Update the display"""
         # everything we draw now is to a buffer that is not displayed
-        self.screen.fill(self.bg_color)
+        
+        # draw background image
+        self.screen.blit(self.background_img, self.background_img.get_rect())
 
         # draw the food
         for f in self.food:
@@ -356,10 +382,10 @@ class Game(object):
         # draw game over or restart message
         if self.state == Game.GAME_OVER:
             draw_centered(self.gameover_txt, self.screen, 
-                          (self.width//2, self.height//2))
+                          (self.width//2, self.height//3))
         elif self.state == Game.STARTING:
             draw_centered(self.playgame_txt, self.screen, 
-                         (self.width//2, self.height//2))
+                         (self.width//2, self.height//3))
 
         # flip buffers so that everything we have drawn gets displayed
         pygame.display.flip()
